@@ -34,6 +34,16 @@ def keywords_fragment(keywords: list[str]) -> str:
     return " ".join(quote(k) for k in keywords if k.strip())
 
 
+def plain_keywords_fragment(keywords: list[str]) -> str:
+    """Render include keywords raw (unquoted), space-joined.
+
+    Open-directory hunting matches against directory listing titles such as
+    ``Index of /Feynman Lectures``; leaving the words unquoted (as the proven
+    ewasion/opendirectory-finder dorks do) keeps results broad and reliable.
+    """
+    return " ".join(k.strip() for k in keywords if k.strip())
+
+
 def excludes_fragment(keywords: list[str]) -> str:
     """Render exclude keywords as a ``-term`` fragment."""
     return " ".join(f"-{quote(k)}" for k in keywords if k.strip())
@@ -57,14 +67,6 @@ def filetype_or(filetypes: list[str]) -> str:
     if len(types) == 1:
         return f"filetype:{types[0]}"
     return "(" + " OR ".join(f"filetype:{t}" for t in types) + ")"
-
-
-def filetype_group(filetypes: list[str]) -> str:
-    """Render filetypes as the open-directory ``+(ext|ext)`` positive group."""
-    types = _clean_extensions(filetypes)
-    if not types:
-        return ""
-    return "+(" + "|".join(types) + ")"
 
 
 def search_url(query: str, base_url: str) -> str:

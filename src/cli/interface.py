@@ -14,6 +14,7 @@ from src.config import (
     CHEAT_SHEET_FILE,
     OBJECTIVES,
     OPERATORS,
+    SEARCH_ENGINES,
     SUGGESTED_FILETYPES,
     Settings,
     get_theme,
@@ -127,21 +128,42 @@ class DorkerApp:
     def _render_overall(
         self, section: Section | None, variation: QueryVariation | None
     ) -> None:
-        """Render the single strongest query found across every section."""
+        """Render the single strongest query found across every section.
+
+        The dork is shown alongside ready-to-click links for several search
+        engines so the user is never tied to Google/Chrome.
+        """
         if variation is None:
             return
         from urllib.parse import quote_plus
 
-        url = f"{self.settings.search_base_url}{quote_plus(variation.query)}"
+        encoded = quote_plus(variation.query)
         source = section.title if section else ""
+
+        body_parts = [
+            Text(f"Most powerful query (from {source}):", style="success"),
+            Text(variation.query, style="recommended"),
+            Text(""),
+            Text("Open in your browser of choice:", style="info"),
+        ]
+        for name, base_url in SEARCH_ENGINES.items():
+            tag = " (best operator support)" if name == "Google" else ""
+            body_parts.append(Text(f"  {name}{tag}: ", style="accent").append(
+                f"{base_url}{encoded}", style="muted"
+            ))
+        body_parts.append(Text(""))
+        body_parts.append(
+            Text(
+                "Tip: these links work in ANY browser (Firefox, Edge, Safari, …) — "
+                "Chrome is not required. The raw query above was copied to your "
+                "clipboard so you can paste it into any search engine.",
+                style="muted",
+            )
+        )
+
         self.console.print(
             Panel(
-                Group(
-                    Text(f"Most powerful query (from {source}):", style="success"),
-                    Text(variation.query, style="recommended"),
-                    Text(""),
-                    Text(url, style="muted"),
-                ),
+                Group(*body_parts),
                 title="[success]★ Overall Recommendation[/success]",
                 border_style="border.accent",
                 padding=(1, 2),

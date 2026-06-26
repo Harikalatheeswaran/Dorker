@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import quote_plus
 
-from src.config import HISTORY_FILE, OBJECTIVES
+from src.config import HISTORY_FILE, OBJECTIVES, SEARCH_ENGINES
 from src.core.models import DorkRequest, Section
 from src.core.query_builder import pick_overall
 from src.utils.files import append_text
@@ -46,6 +47,11 @@ def save_to_history(
     lines.append("```text")
     lines.append(best_variation.query)
     lines.append("```")
+
+    encoded = quote_plus(best_variation.query)
+    lines.append("\n**Open in any browser:**")
+    for name, base_url in SEARCH_ENGINES.items():
+        lines.append(f"- [{name}]({base_url}{encoded})")
 
     if include_all:
         for section in sections:

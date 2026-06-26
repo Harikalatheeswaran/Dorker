@@ -201,16 +201,15 @@ SUGGESTED_FILETYPES: list[str] = [
     "yml",
 ]
 
-# Curated filetype bundles, inspired by ewasion/opendirectory-finder. Useful for
-# open-directory hunting where Google groups extensions with an OR (|) operator.
-FILETYPE_BUNDLES: dict[str, str] = {
-    "documents": "pdf|doc|docx|xls|xlsx|ppt|pptx|csv|txt|rtf|odt",
+# The exact filetype groups used by ewasion/opendirectory-finder's index.html.
+# Open Directory mode reproduces ewasion's logic 100%, so these are kept verbatim
+# (Google's "|" OR groups inside a +(...) inclusion set).
+EWASION_FILETYPE_GROUPS: dict[str, str] = {
+    "video": "mkv|mp4|avi|mov|mpg|wmv|divx|mpeg",
     "books": "MOBI|CBZ|CBR|CBC|CHM|EPUB|FB2|LIT|LRF|ODT|PDF|PRC|PDB|PML|RB|RTF|TCR|DOC|DOCX",
     "music": "mp3|wav|ac3|ogg|flac|wma|m4a|aac|mod",
-    "video": "mkv|mp4|avi|mov|mpg|wmv|divx|mpeg",
     "software": "exe|iso|dmg|tar|7z|bz2|gz|rar|zip|apk",
     "images": "jpg|png|bmp|gif|tif|tiff|psd",
-    "config": "env|conf|cfg|ini|yml|yaml|json|xml|log|sql|bak",
 }
 
 # Extensions that usually indicate a *rendered* web page rather than a raw,
@@ -265,10 +264,24 @@ PASTE_SITES: list[str] = [
 ]
 
 
+# --------------------------------------------------------------------------- #
+# Search engines
+# --------------------------------------------------------------------------- #
+# A generated dork is just a query string — it works in *any* browser and on
+# multiple engines. We surface several ready-to-click links so the user is never
+# locked into Google/Chrome. Google honours advanced operators (filetype:,
+# intitle:index.of, +(...)) most reliably, so it stays the default/headline.
+SEARCH_ENGINES: dict[str, str] = {
+    "Google": "https://www.google.com/search?q=",
+    "DuckDuckGo": "https://duckduckgo.com/?q=",
+    "Bing": "https://www.bing.com/search?q=",
+    "Startpage": "https://www.startpage.com/sp/search?query=",
+}
+
+
 @dataclass
 class Settings:
     """Runtime settings resolved at startup (kept small and explicit)."""
 
     theme_name: str = DEFAULT_THEME
     clipboard_enabled: bool = True
-    search_base_url: str = "https://www.google.com/search?q="

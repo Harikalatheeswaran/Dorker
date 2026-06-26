@@ -147,14 +147,12 @@ def build_queries(req: DorkRequest) -> QueryResult:
 
         # Deep / low-visibility surfacing: recover content that mainstream
         # results miss by pivoting into web archives and public paste dumps.
-        variations.extend(_deep_surface_variations(includes, excludes, filetypes))
+        variations.extend(_deep_surface_variations(includes, excludes))
 
     return fmt.finalise(variations, mode.max_variations)
 
 
-def _deep_surface_variations(
-    includes: str, excludes: str, filetypes: str
-) -> list[QueryVariation]:
+def _deep_surface_variations(includes: str, excludes: str) -> list[QueryVariation]:
     """Build Dork God pivots toward archived / barely-surfaced content.
 
     Truly un-indexed pages cannot be returned by a search engine, but pages that
@@ -169,14 +167,16 @@ def _deep_surface_variations(
     archive_filter = " OR ".join(f"site:{s}" for s in ARCHIVE_SITES)
     paste_filter = " OR ".join(f"site:{s}" for s in PASTE_SITES)
 
+    # Archives & paste sites store HTML snapshots, not typed files — applying a
+    # ``filetype:`` filter here returns nothing, so it is deliberately omitted.
     return [
         QueryVariation(
-            query=fmt.join([includes, filetypes, f"({archive_filter})", excludes]),
+            query=fmt.join([includes, f"({archive_filter})", excludes]),
             rationale="Archived/cached copies — finds pages that were removed or altered.",
             power=7,
         ),
         QueryVariation(
-            query=fmt.join([includes, filetypes, f"({paste_filter})", excludes]),
+            query=fmt.join([includes, f"({paste_filter})", excludes]),
             rationale="Paste & text-dump sites where unlisted/leaked content first appears.",
             power=7,
         ),
@@ -197,14 +197,13 @@ def build_sections(req: DorkRequest) -> list[Section]:
         sections.append(Section(key, mode.label, mode.description, result))
 
     if req.opendir:
-        # Build at the richest tier so the section shows the full ewasion-style
-        # powerhouse plus its variants.
+        # ewasion/opendirectory-finder logic, reproduced verbatim.
         opendir_result = build_opendir_queries(replace(req, mode="god"))
         sections.append(
             Section(
                 key="opendir",
                 title="🗂️ Open Directory",
-                description="Index-of listings · noise & fake-index filtered",
+                description="100% ewasion/opendirectory-finder logic · index.of + noise/fake-index filters",
                 result=opendir_result,
             )
         )
@@ -213,7 +212,17 @@ def build_sections(req: DorkRequest) -> list[Section]:
 
 
 def pick_overall(sections: list[Section]) -> tuple[Section | None, QueryVariation | None]:
-    """Return the (section, variation) with the highest power across all sections."""
+    """Return the (section, variation) to headline as the overall recommendation.
+
+    When the user opted into Open Directory hunting, that section's noise-filtered
+    powerhouse query is exactly what they came for — so it is surfaced as the
+    headline regardless of raw power scores. Otherwise the highest-power
+    recommended variation across all standard tiers wins.
+    """
+    for section in sections:
+        if section.key == "opendir" and section.result.recommended is not None:
+            return section, section.result.recommended
+
     best_section: Section | None = None
     best_variation: QueryVariation | None = None
     best_power = -1

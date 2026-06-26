@@ -1,140 +1,120 @@
 """Open-directory ("index of") discovery query generator.
 
-Inspired by ewasion/opendirectory-finder, whose core trick is to combine
-``intitle:index.of`` with a positive filetype group and a negative ``-inurl``
-filter that strips out rendered web pages and known fake-index link farms::
+This module reproduces the query logic from ewasion/opendirectory-finder's
+``index.html`` **verbatim**. ewasion's builder is::
 
-    <keywords> +(mp3|flac|...) -inurl:(jsp|php|html|...) intitle:index.of
-    -inurl:(listen77|mp3raid|...)
+    // with a filetype group:
+    <query> +(<group>) -inurl:(jsp|pl|php|html|aspx|htm|cf|shtml)
+            intitle:index.of
+            -inurl:(listen77|mp3raid|mp3toss|mp3drug|index_of|index-of|wallywashis|downloadmana)
 
-This module reproduces that logic and layers Dorker's mode system on top so the
-dedicated Open Directory section can dial its aggressiveness up or down.
+    // "Other" (no filetype): identical, minus the +(...) group
+
+Details that make ewasion's dorks reliably return results:
+
+* the query keywords are **unquoted** (open-directory titles vary in spacing),
+* it uses ``intitle:index.of`` (the ``.`` matches any char) — not ``filetype:``,
+* the filetype set is a curated ``+(ext|ext|...)`` group, not a single type,
+* no ``site:`` is applied to the core dork.
+
+Credit: https://github.com/ewasion/opendirectory-finder by @ewasion.
 """
 
 from __future__ import annotations
 
 from src.config import (
-    FILETYPE_BUNDLES,
-    MODES,
+    EWASION_FILETYPE_GROUPS,
     OPENDIR_BLOCKLIST,
     OPENDIR_NOISE_EXTENSIONS,
 )
 from src.core import _format as fmt
 from src.core.models import DorkRequest, QueryResult, QueryVariation
 
+# Map Dorker objectives to ewasion's predefined filetype groups. ewasion has no
+# dedicated "documents" group, but its Books group already contains every common
+# document type (PDF/DOC/DOCX/ODT/RTF...), so it is the faithful fallback.
+_OBJECTIVE_TO_EWASION_GROUP: dict[str, str] = {
+    "books": "books",
+    "documents": "books",
+}
+
 
 def _filetype_group(req: DorkRequest) -> str:
-    """Build the ``+(ext|ext)`` positive filetype group from the request.
+    """Return ewasion's ``+(ext|ext)`` group, or '' for the 'Other' (no-type) path.
 
-    Falls back to a sensible bundle based on the objective when the user did not
-    pick specific extensions.
+    The user's own extensions win when provided; otherwise fall back to the
+    ewasion group mapped from the objective.
     """
-    group = fmt.filetype_group(req.filetypes)
-    if group:
-        return group
-    bundle_key = {"books": "books", "documents": "documents"}.get(req.objective)
-    return f"+({FILETYPE_BUNDLES[bundle_key]})" if bundle_key else ""
+    if req.filetypes:
+        exts = "|".join(t.lstrip(".").strip() for t in req.filetypes if t.strip())
+        return f"+({exts})" if exts else ""
+    key = _OBJECTIVE_TO_EWASION_GROUP.get(req.objective)
+    return f"+({EWASION_FILETYPE_GROUPS[key]})" if key else ""
 
 
 def _noise_filter() -> str:
-    """The ``-inurl:(jsp|php|...)`` filter that removes rendered pages."""
+    """ewasion's ``-inurl:(jsp|pl|php|...)`` filter that removes rendered pages."""
     return "-inurl:(" + "|".join(OPENDIR_NOISE_EXTENSIONS) + ")"
 
 
 def _blocklist_filter() -> str:
-    """The ``-inurl:(listen77|...)`` filter that removes fake-index farms."""
+    """ewasion's ``-inurl:(listen77|...)`` filter that removes fake-index farms."""
     return "-inurl:(" + "|".join(OPENDIR_BLOCKLIST) + ")"
 
 
-def build_opendir_queries(req: DorkRequest) -> QueryResult:
-    """Generate open-directory discovery queries for ``req``."""
-    mode = MODES.get(req.mode, MODES["quick"])
-
-    keywords = fmt.keywords_fragment(req.include_keywords)
-    excludes = fmt.excludes_fragment(req.exclude_keywords)
-    site = fmt.site_fragment(req.site)
-    filetypes = _filetype_group(req)
-
-    variations: list[QueryVariation] = []
-
-    # --- Variation 1: classic, human-readable index-of probe -------------- #
-    variations.append(
-        QueryVariation(
-            query=fmt.join([keywords, 'intitle:"index of"', '"parent directory"', site, excludes]),
-            rationale="Classic open-directory probe (index of + parent directory).",
-            power=2 + bool(site) + bool(keywords),
-        )
-    )
-
-    # --- Variation 2: filetype-focused listing ---------------------------- #
-    if filetypes:
-        variations.append(
-            QueryVariation(
-                query=fmt.join([keywords, filetypes, 'intitle:"index of"', site, excludes]),
-                rationale="Open directories that actually contain your file types.",
-                power=3 + bool(site) + bool(keywords),
-            )
-        )
-
-    # --- Variation 3: the ewasion-style noise-filtered powerhouse --------- #
-    powerhouse = fmt.join(
+def _ewasion_query(keywords: str, group: str, extra: str = "") -> str:
+    """Assemble ewasion's exact query template (optionally narrowed by ``extra``)."""
+    return fmt.join(
         [
             keywords,
-            filetypes,
+            group,
             _noise_filter(),
             "intitle:index.of",
             _blocklist_filter(),
-            site,
-            excludes,
+            extra,
         ]
     )
+
+
+def build_opendir_queries(req: DorkRequest) -> QueryResult:
+    """Generate open-directory queries that mirror ewasion's logic exactly."""
+    keywords = fmt.plain_keywords_fragment(req.include_keywords)
+    group = _filetype_group(req)
+
+    variations: list[QueryVariation] = []
+
+    # --- Variation 1: the exact ewasion dork (headline) ------------------- #
     variations.append(
         QueryVariation(
-            query=powerhouse,
-            rationale="Noise-filtered powerhouse — strips web pages & fake indexes.",
-            power=6 + bool(site) + bool(filetypes),
+            query=_ewasion_query(keywords, group),
+            rationale="ewasion/opendirectory-finder exact logic — index.of + noise & fake-index filters.",
+            power=8,
         )
     )
 
-    # Deeper modes add more surgical variants.
-    if mode.key in {"deep", "god"}:
-        # --- Variation 4: alternate "last modified" listing signature ----- #
+    # --- Variation 2: ewasion 'Other' path (no filetype group) ------------ #
+    # Broader net — same logic without restricting to specific extensions.
+    if group:
         variations.append(
             QueryVariation(
-                query=fmt.join(
-                    [
-                        keywords,
-                        filetypes,
-                        'intitle:"index of"',
-                        '"last modified"',
-                        "-inurl:(html|htm|php|asp)",
-                        site,
-                        excludes,
-                    ]
-                ),
-                rationale="Targets directory listings by their 'last modified' column.",
-                power=5 + bool(site) + bool(filetypes),
+                query=_ewasion_query(keywords, ""),
+                rationale="ewasion 'Other' variant — same logic, any file type.",
+                power=6,
             )
         )
 
-    if mode.aggressive:
-        # --- Variation 5: server-banner directory listings ---------------- #
+    # --- Variation 3: ewasion dork narrowed to the user's site/exclusions - #
+    # ewasion has no site filter, so this only appears when the user supplied
+    # one. Pure ewasion stays the headline above.
+    extra = fmt.join([fmt.site_fragment(req.site), fmt.excludes_fragment(req.exclude_keywords)])
+    if extra:
         variations.append(
             QueryVariation(
-                query=fmt.join(
-                    [
-                        keywords,
-                        filetypes,
-                        'intitle:"index of /"',
-                        '(intext:"apache" OR intext:"nginx")',
-                        _noise_filter(),
-                        site,
-                        excludes,
-                    ]
-                ),
-                rationale="Server-banner directories (Apache/Nginx auto-index pages).",
-                power=5 + bool(site) + bool(filetypes),
+                query=_ewasion_query(keywords, group, extra),
+                rationale="ewasion logic narrowed to your site / exclusions.",
+                power=7,
             )
         )
 
-    return fmt.finalise(variations, mode.max_variations)
+    return fmt.finalise(variations, fmt.MAX_VARIATIONS_CEILING)
+
